@@ -40,7 +40,7 @@ class LabelSmoothing(nn.Module):
 class Embeddings(nn.Module):
     def __init__(self, d_model, vocab):
         super(Embeddings, self).__init__()
-        # Embedding层
+        # Embedding层 一个简单的存储固定大小的词典的嵌入向量的查找表，意思就是说，给一个编号，嵌入层就能返回这个编号对应的嵌入向量
         self.lut = nn.Embedding(vocab, d_model)
         # Embedding维数
         self.d_model = d_model
@@ -68,6 +68,7 @@ class PositionalEncoding(nn.Module):
                 [4.],
                 ...])
         """
+        # 表示单词的位置
         position = torch.arange(0., max_len, device=DEVICE).unsqueeze(1)
         # 这里幂运算太多，我们使用exp和log来转换实现公式中pos下面要除以的分母（由于是分母，要注意带负号）
         div_term = torch.exp(torch.arange(0., d_model, 2, device=DEVICE) * -(math.log(10000.0) / d_model))
@@ -83,7 +84,7 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        # 将一个batch的句子所有词的embedding与已构建好的positional embeding相加
+        # 将一个batch的句子所有词的过去的embedding x与已构建好的positional embeding相加
         # (这里按照该批次数据的最大句子长度来取对应需要的那些positional embedding值)
         x = x + Variable(self.pe[:, :x.size(1)], requires_grad=False)
         return self.dropout(x)
@@ -96,7 +97,7 @@ def attention(query, key, value, mask=None, dropout=None):
     # 将key的最后两个维度互换(转置)，才能与query矩阵相乘，乘完了还要除以d_k开根号
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
 
-    # 如果存在要进行mask的内容，则将那些为0的部分替换成一个很大的负数
+    # 如果存在要进行mask的内容，则将那些为0的部分替换成一个很大的负数，mask出现在decoder
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
 
@@ -119,7 +120,7 @@ class MultiHeadedAttention(nn.Module):
         self.d_k = d_model // h
         # head数量
         self.h = h
-        # 定义4个全连接函数，供后续作为WQ，WK，WV矩阵和最后h个多头注意力矩阵concat之后进行变换的矩阵
+        # 定义4个全连接函数，供后续作为WQ，WK，WV矩阵和最后h个多头注意力矩阵concat之后进行变换的矩阵,分别对应query,key,value
         self.linears = clones(nn.Linear(d_model, d_model), 4)
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
@@ -131,6 +132,7 @@ class MultiHeadedAttention(nn.Module):
         nbatches = query.size(0)
         # 将embedding层乘以WQ，WK，WV矩阵(均为全连接)
         # 并将结果拆成h块，然后将第二个和第三个维度值互换(具体过程见上述解析)
+        # view 维度重构，相当与reshape
         query, key, value = [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
                              for l, x in zip(self.linears, (query, key, value))]
         # 调用上述定义的attention函数计算得到h个注意力矩阵跟value的乘积，以及注意力矩阵
@@ -181,6 +183,7 @@ def clones(module, N):
 
 
 class PositionwiseFeedForward(nn.Module):
+    """一系列的线性神经网络"""
     def __init__(self, d_model, d_ff, dropout=0.1):
         super(PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
@@ -218,7 +221,7 @@ class EncoderLayer(nn.Module):
         self.feed_forward = feed_forward
         # SublayerConnection的作用就是把multi和ffn连在一起
         # 只不过每一层输出之后都要先做Layer Norm再残差连接
-        self.sublayer = clones(SublayerConnection(size, dropout), 2)
+        self.sublayer = clones(SublayerConnection(size, dropout), 2)  # 克隆两个
         # d_model
         self.size = size
 
@@ -263,6 +266,7 @@ class DecoderLayer(nn.Module):
         # 用m来存放encoder的最终hidden表示结果
         m = memory
 
+        # 将self-attention和feed_forward链接在一起
         # Self-Attention：注意self-attention的q，k和v均为decoder hidden
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
         # Context-Attention：注意context-attention的q为decoder hidden，而k和v为encoder hidden
@@ -299,11 +303,12 @@ class Generator(nn.Module):
 
     def forward(self, x):
         # 然后再进行log_softmax操作(在softmax结果上再做多一次log运算)
+        # F 是functional
         return F.log_softmax(self.proj(x), dim=-1)
 
 
 def make_model(src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
-    c = copy.deepcopy
+    c = copy.deepcopy  # 深拷贝对象
     # 实例化Attention对象
     attn = MultiHeadedAttention(h, d_model).to(DEVICE)
     # 实例化FeedForward对象
@@ -315,8 +320,9 @@ def make_model(src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0
         Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout).to(DEVICE), N).to(DEVICE),
         Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout).to(DEVICE), N).to(DEVICE),
         nn.Sequential(Embeddings(d_model, src_vocab).to(DEVICE), c(position)),
-        nn.Sequential(Embeddings(d_model, tgt_vocab).to(DEVICE), c(position)),
-        Generator(d_model, tgt_vocab)).to(DEVICE)
+        nn.Sequential(Embeddings(d_model, tgt_vocab).to(DEVICE), c(position)),  # nn.Sequential 一个有序的容器，神经网络模块将按照在传入构造器的顺序依次被添加到计算图中执行
+        Generator(d_model, tgt_vocab)
+        ).to(DEVICE)
 
     # This was important from their code.
     # Initialize parameters with Glorot / fan_avg.
@@ -360,12 +366,12 @@ def batch_greedy_decode(model, src, src_mask, max_len=64, start_symbol=2, end_sy
 
 
 def greedy_decode(model, src, src_mask, max_len=64, start_symbol=2, end_symbol=3):
-    """传入一个训练好的模型，对指定数据进行预测"""
+    """传入一个训练好的模型，对指定数据进行预测，贪心解码"""
     # 先用encoder进行encode
     memory = model.encode(src, src_mask)
     # 初始化预测内容为1×1的tensor，填入开始符('BOS')的id，并将type设置为输入数据类型(LongTensor)
     ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
-    # 遍历输出的长度下标
+    # 遍历输出的长度下标,依次解码输出
     for i in range(max_len - 1):
         # decode得到隐层表示
         out = model.decode(memory,

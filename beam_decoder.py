@@ -100,7 +100,7 @@ class Beam:
 
 
 def beam_search(model, src, src_mask, max_len, pad, bos, eos, beam_size, device):
-    """ Translation work in one batch """
+    """ Translation work in one batch 每次选择若干待定解"""
 
     def get_inst_idx_to_tensor_position_map(inst_idx_list):
         """ Indicate the position of an instance in a tensor. """

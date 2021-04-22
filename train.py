@@ -32,11 +32,11 @@ def train(train_data, dev_data, model, model_par, criterion, optimizer):
     early_stop = config.early_stop
     for epoch in range(1, config.epoch_num + 1):
         # 模型训练
-        model.train()
+        model.train()  # 训练模式
         train_loss = run_epoch(train_data, model_par,
                                MultiGPULossCompute(model.generator, criterion, config.device_id, optimizer))
         logging.info("Epoch: {}, loss: {}".format(epoch, train_loss))
-        # 模型验证
+        # 模型验证，在model(test)之前，需要加上model.eval()
         model.eval()
         dev_loss = run_epoch(dev_data, model_par,
                              MultiGPULossCompute(model.generator, criterion, config.device_id, None))
@@ -76,7 +76,7 @@ class LossCompute:
                 self.opt.optimizer.zero_grad()
             else:
                 self.opt.zero_grad()
-        return loss.data.item() * norm.float()
+        return loss.data.item() * norm.float()  # data.item返回具体的数值
 
 
 class MultiGPULossCompute:

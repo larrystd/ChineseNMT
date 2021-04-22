@@ -1,6 +1,15 @@
+'''
+Author: your name
+Date: 2021-04-22 09:05:58
+LastEditTime: 2021-04-22 09:25:31
+LastEditors: your name
+Description: In User Settings Edit
+FilePath: /ChineseNMT/tokenizer/tokenize.py
+'''
 import sentencepiece as spm
 
-
+"""利用corpus.en和corpus.ch中的语料训练分词模型，训练完成后会在./tokenizer文件夹下生成chn.model，chn.vocab，eng.model和eng.vocab，其中.model和.vocab分别为模型文件和对应的词表。
+"""
 def train(input_file, vocab_size, model_name, model_type, character_coverage):
     """
     search on https://github.com/google/sentencepiece/blob/master/doc/options.md to learn more about the parameters
